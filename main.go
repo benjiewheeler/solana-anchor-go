@@ -444,7 +444,7 @@ func DecodeEvents(txData *ag_rpc.GetTransactionResult, targetProgramId ag_solana
 	}
 
 	var base64Binaries [][]byte
-	logMessageEventBinaries, err := decodeEventsFromLogMessage(txData.Meta.LogMessages)
+	logMessageEventBinaries, err := decodeEventsFromLogMessage(txData.Meta.LogMessages, targetProgramId)
 	if err != nil {
 		return
 	}
@@ -461,17 +461,42 @@ func DecodeEvents(txData *ag_rpc.GetTransactionResult, targetProgramId ag_solana
 	return
 }
 
-func decodeEventsFromLogMessage(logMessages []string) (eventBinaries [][]byte, err error) {
-	for _, log := range logMessages {
-		if strings.HasPrefix(log, eventLogPrefix) {
-			eventBase64 := log[len(eventLogPrefix):]
+func decodeEventsFromLogMessage(logMessages []string, targetProgramId ag_solanago.PublicKey) (eventBinaries [][]byte, err error) {
+	var programStack []string
 
-			var eventBinary []byte
-			if eventBinary, err = base64.StdEncoding.DecodeString(eventBase64); err != nil {
-				err = fmt.Errorf("failed to decode logMessage event: %s", eventBase64)
-				return
+	for _, log := range logMessages {
+		// Check for program invocation start
+		if strings.HasPrefix(log, "Program ") && strings.Contains(log, " invoke") {
+			// Extract program address between "Program " and " invoke"
+            program := log[7:strings.Index(log, " invoke")]
+            programStack = append(programStack, program)
+		}
+
+		// Check for program completion
+		if strings.HasPrefix(log, "Program ") && strings.Contains(log, " success") {
+			// Pop the stack when a program finishes
+			if len(programStack) > 0 {
+				programStack = programStack[:len(programStack)-1]
 			}
-			eventBinaries = append(eventBinaries, eventBinary)
+		}
+
+		// Process event logs only if we're in the targeted program context
+		if strings.HasPrefix(log, eventLogPrefix) {
+			// Check if current program matches target
+			var currentProgram string
+			if len(programStack) > 0 {
+				currentProgram = programStack[len(programStack)-1]
+			}
+
+			if currentProgram == targetProgramId.String() {
+				eventBase64 := log[len(eventLogPrefix):]
+				var eventBinary []byte
+				if eventBinary, err = base64.StdEncoding.DecodeString(eventBase64); err != nil {
+					err = fmt.Errorf("failed to decode logMessage event: %s", eventBase64)
+					return
+				}
+				eventBinaries = append(eventBinaries, eventBinary)
+			}
 		}
 	}
 	return
