@@ -546,26 +546,35 @@ func deduplicateBytes(base64Binaries [][]byte) [][]byte {
     return result
 }
 
-func parseEvents(base64Binaries [][]byte) (evts []*Event, err error) {
-	decoder := ag_binary.NewDecoderWithEncoding(nil, ag_binary.EncodingBorsh)
+func ParseEvent(eventBinary []byte) (evt *Event, err error) {
+    if len(eventBinary) < 8 {
+        err = fmt.Errorf("invalid event binary length: %d", len(eventBinary))
+        return
+    }
+    eventDiscriminator := ag_binary.TypeID(eventBinary[:8])
+    if eventType, ok := eventTypes[eventDiscriminator]; ok {
+        eventData := reflect.New(eventType).Interface().(EventData)
+		decoder := ag_binary.NewDecoderWithEncoding(eventBinary, ag_binary.EncodingBorsh)
+        if err = eventData.UnmarshalWithDecoder(decoder); err != nil {
+            err = fmt.Errorf("failed to unmarshal event %s: %w", eventType.String(), err)
+            return
+        }
+        evt = &Event{
+            Name: eventNames[eventDiscriminator],
+            Data: eventData,
+        }
+    }
+    return
+}
 
+func parseEvents(base64Binaries [][]byte) (evts []*Event, err error) {
 	for _, eventBinary := range base64Binaries {
-		if len(eventBinary) < 8 {
-			continue
-		}
-		eventDiscriminator := ag_binary.TypeID(eventBinary[:8])
-		if eventType, ok := eventTypes[eventDiscriminator]; ok {
-			eventData := reflect.New(eventType).Interface().(EventData)
-			decoder.Reset(eventBinary)
-			if err = eventData.UnmarshalWithDecoder(decoder); err != nil {
-				err = fmt.Errorf("failed to unmarshal event %s: %w", eventType.String(), err)
-				return
-			}
-			evts = append(evts, &Event{
-				Name: eventNames[eventDiscriminator],
-				Data: eventData,
-			})
-		}
+        var evt *Event
+        evt, err = ParseEvent(eventBinary)
+        if err != nil {
+            return
+        }
+        evts = append(evts, evt)
 	}
 	return
 }
