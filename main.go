@@ -456,6 +456,7 @@ func DecodeEvents(txData *ag_rpc.GetTransactionResult, targetProgramId ag_solana
 
 	base64Binaries = append(base64Binaries, logMessageEventBinaries...)
 	base64Binaries = append(base64Binaries, emitedCPIEventBinaries...)
+	base64Binaries = deduplicateBytes(base64Binaries)
 	evts, err = parseEvents(base64Binaries)
 	return
 }
@@ -500,6 +501,24 @@ func decodeEventsFromEmitCPI(InnerInstructions []ag_rpc.InnerInstruction, accoun
 		}
 	}
 	return
+}
+
+func deduplicateBytes(base64Binaries [][]byte) [][]byte {
+    if len(base64Binaries) <= 1 {
+        return base64Binaries
+    }
+
+    seen := make(map[string]struct{}, len(base64Binaries))
+    result := make([][]byte, 0, len(base64Binaries))
+
+    for _, b := range base64Binaries {
+        key := string(b)
+        if _, exists := seen[key]; !exists {
+            seen[key] = struct{}{}
+            result = append(result, b)
+        }
+    }
+    return result
 }
 
 func parseEvents(base64Binaries [][]byte) (evts []*Event, err error) {
